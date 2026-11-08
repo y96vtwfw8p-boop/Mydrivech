@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>my drive chat</title>
+<script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  body { background: #0f172a; color: #f8fafc; height: 100dvh; display: flex; flex-direction: column; overflow: hidden; }
+  header { background: #1e293b; padding: 12px 18px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #334155; }
+  .logo { font-size: 18px; font-weight: 800; color: #38bdf8; }
+  .user-bar { display: none; align-items: center; gap: 10px; font-size: 13px; color: #94a3b8; }
+  .logout-btn { background: #ef4444; color: #fff; border: none; padding: 6px 10px; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 600; }
+  #auth-screen { flex: 1; display: flex; align-items: center; justify-content: center; padding: 16px; overflow-y: auto; }
+  .auth-card { background: #1e293b; padding: 22px; border-radius: 14px; width: 100%; max-width: 350px; border: 1px solid #334155; }
+  .tabs { display: flex; margin-bottom: 16px; background: #0f172a; border-radius: 8px; padding: 4px; }
+  .tab { flex: 1; text-align: center; padding: 8px; cursor: pointer; border-radius: 6px; font-size: 14px; font-weight: 600; color: #94a3b8; }
+  .tab.active { background: #38bdf8; color: #0f172a; }
+  .field { margin-bottom: 12px; }
+  .field label { display: block; font-size: 12px; color: #cbd5e1; margin-bottom: 4px; }
+  .field input { width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px solid #334155; background: #0f172a; color: #fff; font-size: 14px; outline: none; }
+  .warn-box { background: rgba(245,158,11,0.12); border: 1px solid #f59e0b; color: #fcd34d; padding: 10px; border-radius: 8px; font-size: 12px; margin-bottom: 14px; }
+  .submit-btn { width: 100%; padding: 12px; background: #38bdf8; color: #0f172a; border: none; border-radius: 8px; font-weight: 700; font-size: 15px; cursor: pointer; }
+  .status-msg { color: #f87171; font-size: 13px; margin-top: 10px; text-align: center; min-height: 18px; word-break: break-word; }
+  #chat-screen { flex: 1; display: none; overflow: hidden; }
+  .sidebar { width: 290px; background: #1e293b; border-right: 1px solid #334155; display: flex; flex-direction: column; }
+  .search-area { padding: 12px; border-bottom: 1px solid #334155; display: flex; gap: 6px; }
+  .search-area input { flex: 1; padding: 8px 10px; border-radius: 8px; border: 1px solid #334155; background: #0f172a; color: #fff; font-size: 13px; outline: none; }
+  .search-area button { background: #38bdf8; color: #0f172a; border: none; padding: 0 12px; border-radius: 8px; font-weight: 700; cursor: pointer; }
+  .chat-list { flex: 1; overflow-y: auto; }
+  .chat-item { padding: 12px 14px; border-bottom: 1px solid #0f172a; cursor: pointer; }
+  .chat-item.active, .chat-item:hover { background: #334155; }
+  .chat-item-name { font-weight: 600; font-size: 14px; }
+  .chat-item-user { font-size: 12px; color: #38bdf8; }
+  .main-chat { flex: 1; display: flex; flex-direction: column; background: #0f172a; }
+  .chat-top { padding: 12px 16px; background: #1e293b; border-bottom: 1px solid #334155; display: flex; align-items: center; gap: 10px; }
+  .back-btn { display: none; background: #334155; border: none; color: #fff; padding: 6px 10px; border-radius: 6px; cursor: pointer; }
+  .messages { flex: 1; padding: 14px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
+  .msg { max-width: 78%; padding: 9px 13px; border-radius: 12px; font-size: 14px; word-wrap: break-word; }
+  .msg.me { align-self: flex-end; background: #38bdf8; color: #0f172a; }
+  .msg.other { align-self: flex-start; background: #1e293b; color: #f8fafc; border: 1px solid #334155; }
+  .msg-time { font-size: 10px; opacity: 0.7; margin-top: 3px; text-align: right; }
+  .input-bar { padding: 10px; background: #1e293b; border-top: 1px solid #334155; display: none; gap: 8px; }
+  .input-bar input { flex: 1; padding: 10px; border-radius: 8px; border: 1px solid #334155; background: #0f172a; color: #fff; outline: none; }
+  .input-bar button { background: #38bdf8; color: #0f172a; border: none; padding: 0 16px; border-radius: 8px; font-weight: 700; cursor: pointer; }
+  @media (max-width: 680px) {
+    .sidebar { width: 100%; }
+    .main-chat { display: none; width: 100%; }
+    #chat-screen.open-chat .sidebar { display: none; }
+    #chat-screen.open-chat .main-chat { display: flex; }
+    .back-btn { display: inline-block; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">my drive chat</div>
+  <div class="user-bar" id="user-bar">
+    <span id="my-label"></span>
+    <button class="logout-btn" onclick="logout()">Выйти</button>
+  </div>
+</header>
+
+<div id="auth-screen">
+  <div class="auth-card">
+    <div class="tabs">
+      <div class="tab active" id="t-reg" onclick="setMode('reg')">Регистрация</div>
+      <div class="tab" id="t-log" onclick="setMode('log')">Войти</div>
+    </div>
+    <div class="field">
+      <label>Ваше имя</label>
+      <input type="text" id="in-name" placeholder="Введите имя">
+    </div>
+    <div class="field">
+      <label>Юзернейм</label>
+      <input type="text" id="in-user" placeholder="Введите юзернейм">
+    </div>
+    <div class="field">
+      <label>Пароль</label>
+      <input type="password" id="in-pass" placeholder="Введите пароль">
+    </div>
+    <div class="warn-box" id="reg-warn">это браузер, данные могут не сохранится. Сохраняете пароли</div>
+    <button class="submit-btn" id="auth-btn" onclick="submitAuth()">Зарегистрироваться</button>
+    <div class="status-msg" id="status-msg"></div>
+  </div>
+</div>
+
+<div id="chat-screen">
+  <div class="sidebar">
+    <div class="search-area">
+      <input type="text" id="search-in" placeholder="Поиск по юзернейму...">
+      <button onclick="findUser()">Найти</button>
+    </div>
+    <div class="chat-list" id="chat-list"></div>
+  </div>
+  <div class="main-chat">
+    <div class="chat-top">
+      <button class="back-btn" onclick="closeMobileChat()">←</button>
+      <div id="chat-title" style="font-weight:700;">Выберите чат</div>
+    </div>
+    <div class="messages" id="messages"></div>
+    <div class="input-bar" id="input-bar">
+      <input type="text" id="msg-in" placeholder="Сообщение..." onkeydown="if(event.key==='Enter')sendMsg()">
+      <button onclick="sendMsg()">Отпр</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const SUPABASE_URL = 'https://qndyjtnginlakoregekv.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_Gp4R2GrfEvxIkqJf_WiR4w_b9m8kzSR';
+const db = window.supabase ? window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY) : null;
+
+let mode = 'reg';
+let me = JSON.parse(localStorage.getItem('mdc_user') || 'null');
+let activePeer = null;
+let contacts = JSON.parse(localStorage.getItem('mdc_contacts') || '[]');
+let rtChannel = null;
+
+function setMode(m) {
+  mode = m;
+  document.getElementById('t-reg').className = m === 'reg' ? 'tab active' : 'tab';
+  document.getElementById('t-log').className = m === 'log' ? 'tab active' : 'tab';
+  document.getElementById('reg-warn').style.display = m === 'reg' ? 'block' : 'none';
+  document.getElementById('auth-btn').innerText = m === 'reg' ? 'Зарегистрироваться' : 'Войти';
+  document.getElementById('status-msg').innerText = '';
+}
+
+async function submitAuth() {
+  const st = document.getElementById('status-msg');
+  const btn = document.getElementById('auth-btn');
+  if (!db) { st.innerText = 'Ошибка загрузки библиотеки Supabase'; return; }
+
+  const name = document.getElementById('in-name').value.trim();
+  const username = document.getElementById('in-user').value.trim().toLowerCase().replace(/^@/, '');
+  const password = document.getElementById('in-pass').value.trim();
+
+  if (!name || !username || !password) {
+    st.innerText = 'Заполните все 3 поля!';
+    return;
+  }
+
+  btn.disabled = true;
+  st.style.color = '#38bdf8';
+  st.innerText = 'Подключение к серверу...';
+
+  try {
+    if (mode === 'reg') {
+      const { data: ex, error: exErr } = await db.from('users').select('username').eq('username', username).maybeSingle();
+      if (exErr) throw exErr;
+      if (ex) { throw new Error('Этот юзернейм уже занят!'); }
+
+      const { data, error } = await db.from('users').insert([{ name, username, password }]).select().single();
+      if (error) throw error;
+      loginSuccess(data);
+    } else {
+      const { data, error } = await db.from('users').select('*').eq('name', name).eq('username', username).eq('password', password).maybeSingle();
+      if (error) throw error;
+      if (!data) throw new Error('Неверное имя, юзернейм или пароль!');
+      loginSuccess(data);
+    }
+  } catch (err) {
+    st.style.color = '#f87171';
+    st.innerText = 'Ошибка: ' + (err.message || JSON.stringify(err));
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function loginSuccess(u) {
+  me = u;
+  localStorage.setItem('mdc_user', JSON.stringify(me));
+  document.getElementById('auth-screen').style.display = 'none';
+  document.getElementById('chat-screen').style.display = 'flex';
+  document.getElementById('user-bar').style.display = 'flex';
+  document.getElementById('my-label').innerText = me.name + ' (@' + me.username + ')';
+  loadRecentPeers();
+  subscribeRealtime();
+}
+
+function logout() {
+  localStorage.removeItem('mdc_user');
+  location.reload();
+}
+
+async function findUser() {
+  const q = document.getElementById('search-in').value.trim().toLowerCase().replace(/^@/, '');
+  if (!q || q === me.username) return;
+  const { data, error } = await db.from('users').select('name, username').eq('username', q).maybeSingle();
+  if (error || !data) { alert('Пользователь не найден!'); return; }
+  addContact(data);
+  document.getElementById('search-in').value = '';
+  openChat(data);
+}
+
+function addContact(u) {
+  if (!u || !u.username) return;
+  const ex = contacts.find(c => c.username === u.username);
+  if (!ex) {
+    contacts.unshift({ name: u.name || u.username, username: u.username });
+  } else if (u.name && ex.name !== u.name) {
+    ex.name = u.name;
+  } else {
+    return;
+  }
+  localStorage.setItem('mdc_contacts', JSON.stringify(contacts));
+  renderContacts();
+}
+
+function renderContacts() {
+  const box = document.getElementById('chat-list');
+  box.innerHTML = '';
+  contacts.forEach(c => {
+    const d = document.createElement('div');
+    d.className = 'chat-item' + (activePeer && activePeer.username === c.username ? ' active' : '');
+    d.innerHTML = '<div class="chat-item-name">' + escapeHtml(c.name) + '</div><div class="chat-item-user">@' + escapeHtml(c.username) + '</div>';
+    d.onclick = () => openChat(c);
+    box.appendChild(d);
+  });
+}
+
+async function loadRecentPeers() {
+  renderContacts();
+  const { data } = await db.from('messages').select('sender_username, receiver_username').or('sender_username.eq.' + me.username + ',receiver_username.eq.' + me.username).limit(100);
+  if (data) {
+    const set = new Set();
+    data.forEach(m => {
+      const other = m.sender_username === me.username ? m.receiver_username : m.sender_username;
+      if (other && other !== me.username) set.add(other);
+    });
+    if (set.size > 0) {
+      const { data: uList } = await db.from('users').select('name, username').in('username', Array.from(set));
+      if (uList) uList.forEach(addContact);
+    }
+  }
+}
+
+async function openChat(peer) {
+  activePeer = peer;
+  renderContacts();
+  document.getElementById('chat-screen').classList.add('open-chat');
+  document.getElementById('chat-title').innerText = peer.name + ' (@' + peer.username + ')';
+  document.getElementById('input-bar').style.display = 'flex';
+  const { data } = await db.from('messages').select('*')
+    .or('and(sender_username.eq.' + me.username + ',receiver_username.eq.' + peer.username + '),and(sender_username.eq.' + peer.username + ',receiver_username.eq.' + me.username + ')')
+    .order('created_at', { ascending: true });
+  const box = document.getElementById('messages');
+  box.innerHTML = '';
+  if (data) data.forEach(renderMsg);
+}
+
+function closeMobileChat() {
+  document.getElementById('chat-screen').classList.remove('open-chat');
+}
+
+function renderMsg(m) {
+  const box = document.getElementById('messages');
+  const d = document.createElement('div');
+  d.className = 'msg ' + (m.sender_username === me.username ? 'me' : 'other');
+  const t = new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  d.innerHTML = '<div>' + escapeHtml(m.content) + '</div><div class="msg-time">' + t + '</div>';
+  box.appendChild(d);
+  box.scrollTop = box.scrollHeight;
+}
+
+async function sendMsg() {
+  const inp = document.getElementById('msg-in');
+  const text = inp.value.trim();
+  if (!text || !activePeer) return;
+  inp.value = '';
+  const { data, error } = await db.from('messages').insert([{ sender_username: me.username, receiver_username: activePeer.username, content: text }]).select().single();
+  if (error) alert('Ошибка: ' + error.message);
+  else if (data) renderMsg(data);
+}
+
+function subscribeRealtime() {
+  if (rtChannel) return;
+  rtChannel = db.channel('room1').on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, p => {
+    const m = p.new;
+    if (!m || m.receiver_username !== me.username) return;
+    if (!contacts.find(c => c.username === m.sender_username)) {
+      addContact({ name: m.sender_username, username: m.sender_username });
+      db.from('users').select('name, username').eq('username', m.sender_username).maybeSingle().then(r => {
+        if (r && r.data) addContact(r.data);
+      });
+    }
+    if (activePeer && m.sender_username === activePeer.username) {
+      renderMsg(m);
+    }
+  }).subscribe();
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+if (me && db) loginSuccess(me);
+</script>
+</body>
+</html>
